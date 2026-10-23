@@ -162,8 +162,10 @@ them in on a minimal system — that is the trade-off of `AutoReqProv: no`.
     Hence the Makefile expands `Source0` with `rpmspec -P` and downloads it with `curl`.
   - Copr's SRPM builders are **aarch64**, so `BuildArch: x86_64` breaks SRPM creation
     (`No compatible architectures found for build`). Use `ExclusiveArch: x86_64`.
-  - The SRPM is created once, so `%{?dist}` is fixed by the SRPM-builder chroot; all chroot
-    builds share that release tag. Cosmetic only — EVR comparison ignores the `.fcNN` suffix.
+  - `%{?dist}` is decided when the SRPM is created (on the fc44 aarch64 builder). Copr
+    rebuilds it for chroots whose dist is higher, so in practice: fedora-44/45 repos get
+    `.fc44`/`.fc45` NVRs while the **fedora-43 repo ships `.fc44`-tagged packages**. Cosmetic
+    only — EVR comparison ignores the `.fcNN` suffix; do not "fix" it by hand.
 - **Self-updater.** Obsidian's built-in updater writes `obsidian-<ver>.asar` (~27 MB each)
   into the *config dir* (`~/.config/obsidian`) and never replaces the RPM payload. It is
   wasted space/confusing; tell users to disable *Settings → General → Automatic updates*
@@ -223,8 +225,8 @@ copr-cli build obsidian ~/rpmbuild/SRPMS/obsidian-<ver>-1.fc44.src.rpm
 ```
 
 Notes: pushes made with `GITHUB_TOKEN` do not re-trigger the workflow, which is what stops
-the bump→build loop from recursing. `%{?dist}` resolves per chroot, so the same spec yields
-`.fc43`/`.fc44`/`.fc45` builds.
+the bump→build loop from recursing. `%{?dist}` comes out as the SRPM builder's dist or the
+chroot's, whichever is higher — expect `.fc44` in the fedora-43 repo (see pitfalls).
 
 Licensing note: Obsidian is proprietary. The tarball is publicly redistributable per its
 EULA for personal use, but treat Copr/Fedora "nonfree" expectations conservatively and keep
