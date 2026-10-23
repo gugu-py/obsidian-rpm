@@ -9,7 +9,10 @@ License:        Commercial
 URL:            https://obsidian.md
 Source0:        https://github.com/obsidianmd/obsidian-releases/releases/download/v%{version}/obsidian-%{version}.tar.gz
 
-BuildArch:      x86_64
+# Upstream only ships x86_64 binaries. Use ExclusiveArch (NOT BuildArch!):
+# BuildArch makes "rpmbuild -bs" fail with "No compatible architectures found
+# for build" on Copr, whose SRPM builders are aarch64.
+ExclusiveArch:  x86_64
 AutoReqProv:    no
 
 Requires:       gtk3

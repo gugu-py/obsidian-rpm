@@ -16,6 +16,7 @@ Repo layout:
 obsidian.spec                 # the only artifact that matters; everything hangs off this
 AGENTS.md                     # this file
 .gitignore                    # keeps *.tar.gz / SRPMs / RPMS out of git
+.copr/Makefile                # Copr `make_srpm` entry point: expands Source0 + curls it
 .github/workflows/build.yml   # daily upstream check -> spec bump -> Copr SCM build
 ```
 
@@ -33,9 +34,14 @@ AGENTS.md                     # this file
 5. Keep `AutoReqProv: no`. Upstream ships its own libs, so rpm's auto-dependency generator
    would add bogus soname requirements. Consequence: **the `Requires:` list is maintained
    by hand** — see "Dependency check".
-6. Changelog date format: `date '+%a %b %d %Y'` in the `C` locale (e.g. `Fri Oct 23 2026`),
+6. Keep `ExclusiveArch: x86_64`, **never** `BuildArch: x86_64`. `BuildArch` makes
+   `rpmbuild -bs` abort with `No compatible architectures found for build` on Copr, because
+   Copr builds SRPMs on **aarch64** builders. `ExclusiveArch` still refuses binary builds on
+   non-x86_64 chroots (`Architecture is not included: aarch64`), which is the part that
+   matters, while letting the arch-independent SRPM be created anywhere.
+7. Changelog date format: `date '+%a %b %d %Y'` in the `C` locale (e.g. `Fri Oct 23 2026`),
    entry `* <date> <Name> <<email>> - <version>-<release>`.
-7. Do **not** `sudo dnf install` on the user's machine from an agent session — sudo needs a
+8. Do **not** `sudo dnf install` on the user's machine from an agent session — sudo needs a
    password. Build, verify, then print the install command for the user.
 
 ## Version-update runbook
@@ -149,6 +155,15 @@ them in on a minimal system — that is the trade-off of `AutoReqProv: no`.
   the Flatpak, not to this RPM. Do not "fix" this by renaming the ID casually — the ID is
   what makes Obsidian's own URI handler and `StartupWMClass` matching work. Options: drop
   the Flatpak, or copy the desktop file to `~/.local/share/applications/` (user priority).
+- **Copr SCM builds need `.copr/Makefile` and an aarch64-safe spec.** Two things that cost
+  real debugging time:
+  - With `--method make_srpm`, Copr runs `make -f .copr/Makefile srpm outdir=… spec=…`.
+    The `srpm-build` chroot contains **curl + rpm-build only** — no `rpmdevtools`/`spectool`.
+    Hence the Makefile expands `Source0` with `rpmspec -P` and downloads it with `curl`.
+  - Copr's SRPM builders are **aarch64**, so `BuildArch: x86_64` breaks SRPM creation
+    (`No compatible architectures found for build`). Use `ExclusiveArch: x86_64`.
+  - The SRPM is created once, so `%{?dist}` is fixed by the SRPM-builder chroot; all chroot
+    builds share that release tag. Cosmetic only — EVR comparison ignores the `.fcNN` suffix.
 - **Self-updater.** Obsidian's built-in updater writes `obsidian-<ver>.asar` (~27 MB each)
   into the *config dir* (`~/.config/obsidian`) and never replaces the RPM payload. It is
   wasted space/confusing; tell users to disable *Settings → General → Automatic updates*
