@@ -1,0 +1,102 @@
+name: bump-and-build
+
+# Checks upstream daily, bumps obsidian.spec when a new Obsidian release appears,
+# then builds the package on Copr via an SCM build (Copr fetches the 131 MB
+# tarball itself, thanks to the URL in Source0 — nothing huge enters this repo
+# or the Copr upload channel).
+
+on:
+  schedule:
+    - cron: '17 5 * * *'   # daily, 05:17 UTC
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - obsidian.spec
+      - .github/workflows/build.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: copr-obsidian
+  cancel-in-progress: false
+
+env:
+  COPR_PROJECT: obsidian
+
+jobs:
+  bump-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve latest upstream version
+        id: upstream
+        run: |
+          set -euo pipefail
+          # Follow the releases/latest redirect (the GitHub API is heavily rate limited)
+          latest=$(curl -fsSL -o /dev/null -w '%{url_effective}' \
+                     https://github.com/obsidianmd/obsidian-releases/releases/latest \
+                   | sed 's|.*/releases/tag/v||')
+          if ! [[ "$latest" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Could not resolve upstream version (got '$latest')"
+            exit 1
+          fi
+          current=$(sed -n 's/^Version:[[:space:]]*//p' obsidian.spec)
+          echo "upstream=$latest spec=$current"
+          echo "version=$latest" >> "$GITHUB_OUTPUT"
+          if [ "$latest" = "$current" ]; then
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "bumped=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump spec to ${{ steps.upstream.outputs.version }}
+        if: steps.upstream.outputs.bumped == 'true'
+        run: |
+          set -euo pipefail
+          v='${{ steps.upstream.outputs.version }}'
+          sed -i -E "s/^Version:.*/Version:        ${v}/" obsidian.spec
+          sed -i -E 's/^Release:.*/Release:        1%{?dist}/' obsidian.spec
+          day=$(LC_ALL=C TZ=UTC date '+%a %b %d %Y')
+          entry=$(mktemp)
+          printf '* %s %s <%s> - %s-1\n- Update to Obsidian %s\n\n' \
+                 "$day" "$GIT_NAME" "$GIT_EMAIL" "$v" "$v" > "$entry"
+          sed -i "/^%changelog\$/r ${entry}" obsidian.spec
+          git diff -- obsidian.spec
+        env:
+          GIT_NAME: github-actions[bot]
+          GIT_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+
+      - name: Commit and push bump
+        if: steps.upstream.outputs.bumped == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add obsidian.spec
+          git commit -m "Update to Obsidian ${{ steps.upstream.outputs.version }}"
+          git push origin HEAD:main
+
+      - name: Install copr-cli
+        run: python3 -m pip install --quiet --user copr-cli
+
+      - name: Trigger Copr SCM build
+        env:
+          COPR_CONFIG: ${{ secrets.COPR_CONFIG }}
+        run: |
+          set -euo pipefail
+          if [ -z "${COPR_CONFIG:-}" ]; then
+            echo "::error::COPR_CONFIG secret is not set"
+            exit 1
+          fi
+          mkdir -p ~/.config
+          (umask 077; printf '%s\n' "$COPR_CONFIG" > ~/.config/copr)
+          copr-cli buildscm "$COPR_PROJECT" \
+            --clone-url "${{ github.server_url }}/${{ github.repository }}" \
+            --commit "$(git rev-parse HEAD)" \
+            --subdir . \
+            --spec obsidian.spec \
+            --method make_srpm

@@ -1,0 +1,12 @@
+# Upstream sources are fetched by spectool/Copr, never committed (~131 MB)
+*.tar.gz
+*.tar.xz
+
+# Build artifacts
+*.rpm
+*.src.rpm
+/BUILD/
+/BUILDROOT/
+/RPMS/
+/SRPMS/
+/SOURCES/
