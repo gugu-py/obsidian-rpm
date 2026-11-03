@@ -1,7 +1,7 @@
 Name:           obsidian
 %global debug_package %{nil}
 
-Version:        1.14.5
+Version:        1.15.0
 Release:        1%{?dist}
 Summary:        Obsidian - A powerful knowledge base on top of local Markdown files
 
@@ -77,6 +77,9 @@ install -Dm644 resources/icon.png \
 %{_datadir}/icons/hicolor/512x512/apps/obsidian.png
 
 %changelog
+* Tue Nov 03 2026 github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com> - 1.15.0-1
+- Update to Obsidian 1.15.0
+
 * Fri Oct 23 2026 Dhirandar <idhirandar@gmail.com> - 1.14.5-1
 - Update to Obsidian 1.14.5
 - Ship obsidian-cli symlink
